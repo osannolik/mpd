@@ -2,10 +2,11 @@
 
 mod common;
 
-use common::{ScanProperties, SendPulse};
+use common::ToDecibel;
+use common::{RangePulse, ScanProperties, SendPulse};
 
 use ndarray; //::{self, s}; //::{self, prelude::*};
-//use ndarray::Array1;
+             //use ndarray::Array1;
 use num_complex::Complex;
 use rustfft::FFTplanner;
 
@@ -28,12 +29,12 @@ fn main() {
     println!("Input {:?}", input);
     println!("Output {:?}", output);
     /*
-        let t = [-5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
+       let t = [-5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
 
-        let t2 = Array1::linspace(-5.0, 5.0, 11);
-        let k = 1.0 / 11.0;
-        println!("Chirp {:?}", common::chirp_linear(&t2, 0.0, k));
-     */
+       let t2 = Array1::linspace(-5.0, 5.0, 11);
+       let k = 1.0 / 11.0;
+       println!("Chirp {:?}", common::chirp_linear(&t2, 0.0, k));
+    */
 
     let p = ScanProperties {
         carrier_freq: 3.0e9,
@@ -46,4 +47,8 @@ fn main() {
     let pulse = SendPulse::new(p.sample_freq, &p);
 
     println!("Pulse {:?}", pulse);
+
+    let noise_inti = RangePulse::noise((-75.0).db(), &p);
+
+    println!("Noise {:?}", noise_inti);
 }
