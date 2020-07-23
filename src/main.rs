@@ -51,4 +51,8 @@ fn main() {
     let noise_inti = RangePulse::noise((-75.0).db(), &p);
 
     println!("Noise {:?}", noise_inti);
+
+    let clutter_inti = RangePulse::clutter((-75.0 + 40.0).db(), &p);
+
+    println!("Clutter {:?}", clutter_inti);
 }

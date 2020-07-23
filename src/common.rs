@@ -1,5 +1,5 @@
 use ndarray::{Array1, Array2, Zip};
-use ndarray_rand::rand_distr::StandardNormal;
+use ndarray_rand::rand_distr::{StandardNormal, Uniform};
 use ndarray_rand::RandomExt;
 //use ndarray_rand::rand_distr::Distribution;
 use num_complex::Complex64;
@@ -139,6 +139,38 @@ impl RangePulse {
             matrix: Zip::from(&mut re)
                 .and(&im)
                 .apply_collect(|&mut re, &im| Complex64::new(re, im)),
+        }
+    }
+
+    pub fn clutter(level: Decibel, properties: &ScanProperties) -> RangePulse {
+        let (nof_comps, nof_pulses, nof_samples) = (
+            11,
+            properties.nof_pulses as usize,
+            properties.nof_receive_samples() as usize,
+        );
+        let freqs_range = Array1::linspace(-0.005, 0.005, nof_comps)
+            .into_shape((1, nof_comps))
+            .unwrap();
+        let phase_range = 2.0 * Real::PI() * &freqs_range;
+        let pri_range = Array1::linspace(1.0, nof_pulses as Real, nof_pulses)
+            .into_shape((1, nof_pulses))
+            .unwrap();
+        let freqs_scale = level.scale()
+            * freqs_range.map(|&f| Real::powf(10.0, -1.25 / 81.0 * Real::powf(f * 2048.0, 2.0)));
+        let to_weight = |n: &Real| -> Complex64 {
+            Complex64::new(0.0, 2.0 * Real::PI() * n).exp() * (-2.0 * n.ln()).sqrt()
+        };
+        let rnd_weights =
+            Array2::random((nof_samples, nof_comps), Uniform::new(Real::EPSILON, 1.0))
+                .map(to_weight)
+                * &freqs_scale;
+        let phase = phase_range
+            .t()
+            .dot(&pri_range)
+            .map(|&im| Complex64::new(0.0, im).exp());
+
+        RangePulse {
+            matrix: rnd_weights.dot(&phase),
         }
     }
 }
