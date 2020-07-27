@@ -3,7 +3,7 @@
 mod common;
 
 use common::ToDecibel;
-use common::{RangePulse, ScanProperties, SendPulse};
+use common::{RangePulse, ScanProperties};
 
 use ndarray; //::{self, s}; //::{self, prelude::*};
              //use ndarray::Array1;
@@ -44,7 +44,7 @@ fn main() {
         nof_range_bins: 115,
     };
 
-    let pulse = SendPulse::new(p.sample_freq, &p);
+    let pulse = p.send_pulse(p.sample_freq);
 
     println!("Pulse {:?}", pulse);
 
@@ -55,4 +55,8 @@ fn main() {
     let clutter_inti = RangePulse::clutter((-75.0 + 40.0).db(), &p);
 
     println!("Clutter {:?}", clutter_inti);
+
+    let target = RangePulse::target(50000.0, 300.0, (-65.0).db(), &p);
+
+    println!("Target {:?}", target);
 }

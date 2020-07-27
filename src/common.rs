@@ -1,4 +1,4 @@
-use ndarray::{Array1, Array2, Zip};
+use ndarray::{s, Array1, Array2, Zip};
 use ndarray_rand::rand_distr::{StandardNormal, Uniform};
 use ndarray_rand::RandomExt;
 //use ndarray_rand::rand_distr::Distribution;
@@ -30,6 +30,7 @@ impl<T, Re, Im> Distribution<Complex<T>> for ComplexDistribution<Re, Im>
 }
 */
 
+#[derive(Copy, Clone)]
 pub struct Decibel(Real);
 
 impl Decibel {
@@ -59,16 +60,16 @@ pub struct ScanProperties {
 
     pub duty_cycle: Real,
 
-    pub nof_pulses: Natural,
-    pub nof_range_bins: Natural,
+    pub nof_pulses: usize,
+    pub nof_range_bins: usize,
 }
 
 impl ScanProperties {
-    pub fn nof_send_samples(&self) -> Natural {
-        ((self.nof_range_bins as Real) * self.duty_cycle) as Natural
+    pub fn nof_send_samples(&self) -> usize {
+        ((self.nof_range_bins as Real) * self.duty_cycle) as usize
     }
 
-    pub fn nof_receive_samples(&self) -> Natural {
+    pub fn nof_receive_samples(&self) -> usize {
         self.nof_range_bins - self.nof_send_samples()
     }
 
@@ -92,29 +93,30 @@ impl ScanProperties {
         self.wavelength() * self.pulse_repetition_freq() / 2.0
     }
 
-    pub fn receive_shape(&self) -> (usize, usize) {
-        (
-            self.nof_receive_samples() as usize,
-            self.nof_pulses as usize,
-        )
+    fn alias_velocity(&self, velocity: Real) -> Real {
+        velocity % self.unambiguous_velocity()
     }
-}
 
-#[derive(Debug)]
-pub struct SendPulse {
-    signal: Array1<Complex64>,
-}
+    fn alias_range(&self, range: Real) -> Real {
+        range % self.unambiguous_range()
+    }
 
-impl SendPulse {
-    pub fn new(sweep_freq: Real, properties: &ScanProperties) -> SendPulse {
-        let n = properties.nof_send_samples() as Real;
-        let i = (n - 1.0) / 2.0;
-        let t = Array1::linspace(-i, i, n as usize);
-        let sweep_rate = sweep_freq / properties.sample_freq / n;
+    pub fn doppler_shift(&self, velocity: Real) -> Real {
+        -2.0 * self.alias_velocity(velocity) / self.wavelength()
+    }
 
-        SendPulse {
-            signal: chirp_linear(&t, 0.0, sweep_rate),
-        }
+    pub fn send_pulse(&self, sweep_freq: Real) -> Array2<Complex64> {
+        let n = self.nof_send_samples();
+        let i = (n as Real - 1.0) / 2.0;
+        let t = Array1::linspace(-i, i, n);
+        let sweep_rate = sweep_freq / self.sample_freq / n as Real;
+        chirp_linear(&t, 0.0, sweep_rate)
+            .into_shape([1, n])
+            .unwrap()
+    }
+
+    pub fn receive_shape(&self) -> (usize, usize) {
+        (self.nof_receive_samples(), self.nof_pulses)
     }
 }
 
@@ -143,11 +145,8 @@ impl RangePulse {
     }
 
     pub fn clutter(level: Decibel, properties: &ScanProperties) -> RangePulse {
-        let (nof_comps, nof_pulses, nof_samples) = (
-            11,
-            properties.nof_pulses as usize,
-            properties.nof_receive_samples() as usize,
-        );
+        let (nof_comps, nof_pulses, nof_samples) =
+            (11, properties.nof_pulses, properties.nof_receive_samples());
         let freqs_range = Array1::linspace(-0.005, 0.005, nof_comps)
             .into_shape((1, nof_comps))
             .unwrap();
@@ -160,17 +159,49 @@ impl RangePulse {
         let to_weight = |n: &Real| -> Complex64 {
             Complex64::new(0.0, 2.0 * Real::PI() * n).exp() * (-2.0 * n.ln()).sqrt()
         };
-        let rnd_weights =
-            Array2::random((nof_samples, nof_comps), Uniform::new(Real::EPSILON, 1.0))
-                .map(to_weight)
-                * &freqs_scale;
+        let weights = Array2::random((nof_samples, nof_comps), Uniform::new(Real::EPSILON, 1.0))
+            .map(to_weight)
+            * &freqs_scale;
         let phase = phase_range
             .t()
             .dot(&pri_range)
             .map(|&im| Complex64::new(0.0, im).exp());
 
         RangePulse {
-            matrix: rnd_weights.dot(&phase),
+            matrix: weights.dot(&phase),
+        }
+    }
+
+    pub fn target(
+        range: Real,
+        radial_velocity: Real,
+        level: Decibel,
+        properties: &ScanProperties,
+    ) -> RangePulse {
+        let phase_shift_per_pulse = 2.0 * Real::PI() * properties.doppler_shift(radial_velocity)
+            / properties.pulse_repetition_freq();
+        let nof_pulses = properties.nof_pulses;
+        let reflection = Array1::linspace(0.0, (nof_pulses - 1) as Real, nof_pulses)
+            .map(|&x| Complex64::from_polar(&level.scale(), &(phase_shift_per_pulse * x)))
+            .into_shape([1, nof_pulses])
+            .unwrap();
+        let send_pulse = properties.send_pulse(properties.sample_freq);
+        let echo = send_pulse.t().dot(&reflection);
+        let target_rx_bin = (properties.alias_range(range) / properties.range_bin_length()).round()
+            as usize
+            - send_pulse.len();
+
+        // Limit these and slice echo correctly for targets in pulse or close to Rprf...
+        let start = target_rx_bin.max(0);
+        let stop = start + echo.dim().0;
+
+        let mut range_pulses =
+            Array2::from_elem(properties.receive_shape(), Complex64::new(0.0, 0.0));
+
+        range_pulses.slice_mut(s![start..stop, ..]).assign(&echo);
+
+        RangePulse {
+            matrix: range_pulses,
         }
     }
 }
