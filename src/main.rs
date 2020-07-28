@@ -3,12 +3,18 @@
 mod common;
 
 use common::ToDecibel;
-use common::{RangePulse, ScanProperties};
+use common::{RangePulse, ScanProperties, Target};
 
 use ndarray; //::{self, s}; //::{self, prelude::*};
              //use ndarray::Array1;
 use num_complex::Complex;
 use rustfft::FFTplanner;
+
+use serde_json;
+
+use std::fs::File;
+use std::io::prelude::*;
+use std::path::Path;
 
 fn main() {
     let c: Complex<f64> = Complex::new(1.0, 0.1);
@@ -28,13 +34,6 @@ fn main() {
 
     println!("Input {:?}", input);
     println!("Output {:?}", output);
-    /*
-       let t = [-5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
-
-       let t2 = Array1::linspace(-5.0, 5.0, 11);
-       let k = 1.0 / 11.0;
-       println!("Chirp {:?}", common::chirp_linear(&t2, 0.0, k));
-    */
 
     let p = ScanProperties {
         carrier_freq: 3.0e9,
@@ -56,7 +55,36 @@ fn main() {
 
     println!("Clutter {:?}", clutter_inti);
 
-    let target = RangePulse::target(50000.0, 300.0, (-65.0).db(), &p);
+    let targets = [
+        Target {
+            velocity: 300.0,
+            range: 50e3,
+            level: (-65.0).db(),
+        },
+        Target {
+            velocity: -450.0,
+            range: 100e3,
+            level: (-45.0).db(),
+        },
+    ];
 
-    println!("Target {:?}", target);
+    let targets: RangePulse = targets.iter().map(|tgt| RangePulse::target(tgt, &p)).sum();
+
+    println!("Target {:?}", targets);
+
+    let path = Path::new("video.json");
+    let display = path.display();
+
+    let mut file = match File::create(&path) {
+        Err(why) => panic!("couldn't create {}: {}", display, why),
+        Ok(file) => file,
+    };
+
+    let s = serde_json::to_string(&targets).unwrap();
+    println!("s {:?}", s);
+
+    match file.write_all(s.as_bytes()) {
+        Err(why) => panic!("couldn't write to {}: {}", display, why),
+        Ok(_) => println!("successfully wrote to {}", display),
+    }
 }
