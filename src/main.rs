@@ -43,18 +43,6 @@ fn main() {
         nof_range_bins: 115,
     };
 
-    let pulse = p.send_pulse(p.sample_freq);
-
-    println!("Pulse {:?}", pulse);
-
-    let noise_inti = RangePulse::noise((-75.0).db(), &p);
-
-    println!("Noise {:?}", noise_inti);
-
-    let clutter_inti = RangePulse::clutter((-75.0 + 40.0).db(), &p);
-
-    println!("Clutter {:?}", clutter_inti);
-
     let targets = [
         Target {
             velocity: 300.0,
@@ -68,9 +56,11 @@ fn main() {
         },
     ];
 
-    let targets: RangePulse = targets.iter().map(|tgt| RangePulse::target(tgt, &p)).sum();
+    let video: RangePulse = RangePulse::noise((-75.0).db(), &p)
+        + RangePulse::clutter((-75.0 + 40.0).db(), &p)
+        + targets.iter().map(|tgt| RangePulse::target(tgt, &p)).sum();
 
-    println!("Target {:?}", targets);
+    println!("Video {:?}", video);
 
     let path = Path::new("video.json");
     let display = path.display();
@@ -80,7 +70,7 @@ fn main() {
         Ok(file) => file,
     };
 
-    let s = serde_json::to_string(&targets).unwrap();
+    let s = serde_json::to_string(&video).unwrap();
     println!("s {:?}", s);
 
     match file.write_all(s.as_bytes()) {

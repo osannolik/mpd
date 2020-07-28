@@ -7,6 +7,7 @@ use num_traits::{FloatConst, Num, ToPrimitive};
 //use rand::Rng;
 use serde::Serialize;
 use std::iter::Sum;
+use std::ops::Add;
 
 pub type Real = f64;
 pub type Natural = u64;
@@ -139,6 +140,16 @@ pub struct Target {
 #[derive(Debug, Serialize)]
 pub struct RangePulse {
     matrix: Array2<Complex64>,
+}
+
+impl Add for RangePulse {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        RangePulse {
+            matrix: self.matrix + rhs.matrix,
+        }
+    }
 }
 
 impl Sum for RangePulse {
