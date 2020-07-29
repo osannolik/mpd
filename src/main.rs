@@ -10,10 +10,6 @@ use ndarray; //::{self, s}; //::{self, prelude::*};
 use num_complex::Complex;
 use rustfft::FFTplanner;
 
-use serde_json;
-
-use std::fs::File;
-use std::io::prelude::*;
 use std::path::Path;
 
 fn main() {
@@ -62,19 +58,7 @@ fn main() {
 
     println!("Video {:?}", video);
 
-    let path = Path::new("video.json");
-    let display = path.display();
-
-    let mut file = match File::create(&path) {
-        Err(why) => panic!("couldn't create {}: {}", display, why),
-        Ok(file) => file,
-    };
-
-    let s = serde_json::to_string(&video).unwrap();
-    println!("s {:?}", s);
-
-    match file.write_all(s.as_bytes()) {
-        Err(why) => panic!("couldn't write to {}: {}", display, why),
-        Ok(_) => println!("successfully wrote to {}", display),
-    }
+    video
+        .to_file(Path::new("video.json"))
+        .expect("Could not write to file");
 }

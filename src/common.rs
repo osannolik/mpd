@@ -9,6 +9,9 @@ use serde::Serialize;
 use std::iter::Sum;
 use std::ops::Add;
 
+use std::fs::File;
+use std::io::Write;
+
 pub type Real = f64;
 pub type Natural = u64;
 
@@ -245,6 +248,13 @@ impl RangePulse {
         RangePulse {
             matrix: range_pulses,
         }
+    }
+
+    pub fn to_file(&self, path: &std::path::Path) -> Result<(), std::io::Error> {
+        let mut file = File::create(&path)?;
+        let s = serde_json::to_string(self)?;
+        file.write_all(s.as_bytes())?;
+        Ok(())
     }
 }
 
