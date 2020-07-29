@@ -71,6 +71,28 @@ impl<T: Num + ToPrimitive> ToDecibel<T> for T {
     }
 }
 
+trait Reshape2d<T> {
+    fn to_1d(self) -> Array1<T>;
+}
+
+trait Reshape1d<T> {
+    fn to_2d(self) -> Array2<T>;
+}
+
+impl<T> Reshape2d<T> for Array2<T> {
+    fn to_1d(self) -> Array1<T> {
+        let len = self.len();
+        self.into_shape(len).unwrap()
+    }
+}
+
+impl<T> Reshape1d<T> for Array1<T> {
+    fn to_2d(self) -> Array2<T> {
+        let len = self.len();
+        self.into_shape([1, len]).unwrap()
+    }
+}
+
 pub fn chirp_linear(t: &Array1<Real>, f0: Real, k: Real) -> Array1<Complex64> {
     t.map(|&t| -2.0 * Real::PI() * (f0 * t + k * t * t / 2.0))
         .map(|&im| Complex64::new(0.0, im).exp())
@@ -127,14 +149,12 @@ impl ScanProperties {
         -2.0 * self.alias_velocity(velocity) / self.wavelength()
     }
 
-    pub fn send_pulse(&self, sweep_freq: Real) -> Array2<Complex64> {
+    pub fn send_pulse(&self, sweep_freq: Real) -> Array1<Complex64> {
         let n = self.nof_send_samples();
         let i = (n as Real - 1.0) / 2.0;
         let t = Array1::linspace(-i, i, n);
         let sweep_rate = sweep_freq / self.sample_freq / n as Real;
         chirp_linear(&t, 0.0, sweep_rate)
-            .into_shape([1, n])
-            .unwrap()
     }
 
     pub fn receive_shape(&self) -> (usize, usize) {
@@ -204,13 +224,9 @@ impl RangePulse {
     pub fn clutter<L: Into<Decibel>>(level: L, properties: &ScanProperties) -> RangePulse {
         let (nof_comps, nof_pulses, nof_samples) =
             (11, properties.nof_pulses, properties.nof_receive_samples());
-        let freqs_range = Array1::linspace(-0.005, 0.005, nof_comps)
-            .into_shape((1, nof_comps))
-            .unwrap();
+        let freqs_range = Array1::linspace(-0.005, 0.005, nof_comps).to_2d();
         let phase_range = 2.0 * Real::PI() * &freqs_range;
-        let pri_range = Array1::linspace(1.0, nof_pulses as Real, nof_pulses)
-            .into_shape((1, nof_pulses))
-            .unwrap();
+        let pri_range = Array1::linspace(1.0, nof_pulses as Real, nof_pulses).to_2d();
         let freqs_scale = level.into().unit()
             * freqs_range.map(|&f| Real::powf(10.0, -1.25 / 81.0 * Real::powf(f * 2048.0, 2.0)));
         let to_weight = |n: &Real| -> Complex64 {
@@ -236,9 +252,8 @@ impl RangePulse {
         let amp = target.level.unit();
         let reflection = Array1::linspace(0.0, (nof_pulses - 1) as Real, nof_pulses)
             .map(|&x| Complex64::from_polar(&amp, &(phase_shift_per_pulse * x)))
-            .into_shape([1, nof_pulses])
-            .unwrap();
-        let send_pulse = properties.send_pulse(properties.sample_freq);
+            .to_2d();
+        let send_pulse = properties.send_pulse(properties.sample_freq).to_2d();
         let echo = send_pulse.t().dot(&reflection);
         let target_rx_bin = (properties.alias_range(target.range) / properties.range_bin_length())
             .round() as usize
