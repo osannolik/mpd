@@ -43,16 +43,16 @@ fn main() {
         Target {
             velocity: 300.0,
             range: 50e3,
-            level: (-65.0).db(),
+            level: -65.0.db(),
         },
         Target {
             velocity: -450.0,
             range: 100e3,
-            level: (-45.0).db(),
+            level: -45.0.db(),
         },
     ];
 
-    let video: RangePulse = RangePulse::noise((-75.0).db(), &p)
+    let video = RangePulse::noise(-75.0.db(), &p)
         + RangePulse::clutter((-75.0 + 40.0).db(), &p)
         + targets.iter().map(|tgt| RangePulse::target(tgt, &p)).sum();
 

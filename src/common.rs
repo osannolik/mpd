@@ -7,7 +7,7 @@ use num_traits::{FloatConst, Num, ToPrimitive};
 //use rand::Rng;
 use serde::Serialize;
 use std::iter::Sum;
-use std::ops::Add;
+use std::ops::{Add, Neg};
 
 use std::fs::File;
 use std::io::Write;
@@ -42,6 +42,14 @@ pub struct Decibel(Real);
 impl Decibel {
     pub fn unit(self) -> Real {
         Real::powf(10.0, self.0 / 20.0)
+    }
+}
+
+impl Neg for Decibel {
+    type Output = Decibel;
+
+    fn neg(self) -> Self::Output {
+        Self(-self.0)
     }
 }
 
