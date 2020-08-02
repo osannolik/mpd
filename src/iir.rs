@@ -1,4 +1,4 @@
-extern crate test;
+// extern crate test;
 
 use num_traits::Zero;
 use std::iter::Sum;
@@ -32,7 +32,7 @@ where
 mod tests {
     use super::*;
     use num_complex::Complex64;
-    use test::Bencher;
+    // use test::Bencher;
 
     const BR: [f64; 4] = [0.16666667, 0.5, 0.5, 0.16666667];
     const AR: [f64; 4] = [1.00000000, -2.77555756e-16, 3.33333333e-01, -1.85037171e-17];
@@ -155,17 +155,19 @@ mod tests {
         assert_eq!(out, expected);
     }
 
-    #[bench]
-    fn bench_iir_reals(b: &mut Bencher) {
-        b.iter(|| iir_filter(&BR, &AR, &XR));
-    }
+    /*
+        #[bench]
+        fn bench_iir_reals(b: &mut Bencher) {
+            b.iter(|| iir_filter(&BR, &AR, &XR));
+        }
 
-    #[bench]
-    fn bench_iir(b: &mut Bencher) {
-        let bc = cpx_vec(&BC);
-        let ac = cpx_vec(&AC);
-        let xc = cpx_vec(&XC);
+        #[bench]
+        fn bench_iir(b: &mut Bencher) {
+            let bc = cpx_vec(&BC);
+            let ac = cpx_vec(&AC);
+            let xc = cpx_vec(&XC);
 
-        b.iter(|| iir_filter(bc.as_slice(), ac.as_slice(), xc.as_slice()));
-    }
+            b.iter(|| iir_filter(bc.as_slice(), ac.as_slice(), xc.as_slice()));
+        }
+    */
 }
