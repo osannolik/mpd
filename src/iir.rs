@@ -1,108 +1,28 @@
 extern crate test;
 
-use crate::common;
-
-use common::Real;
-
-use ndarray::Array1;
-use ndarray::{s};
-
 use num_traits::Zero;
 use std::iter::Sum;
 use std::ops::{Div, Mul, Sub};
 
-pub fn iir_filter(b: &Array1<Real>, a: &Array1<Real>, input: &Array1<Real>) -> Array1<Real> {
-    assert_eq!(b.len(), a.len());
-    let mut w = Array1::from_elem(a.len(), 0.0);
-    input.map(|&x| {
-        let y = (x * b.first().unwrap() + w.first().unwrap()) / a.first().unwrap();
-        let update = x * &b.slice(s![1..]) - y * &a.slice(s![1..]) + w.slice(s![1..]);
-        w.slice_mut(s![..w.len() - 1]).assign(&update);
-        y
-    })
-}
-
-pub fn iir_filter_2_reals(b: &[Real], a: &[Real], input: &[Real]) -> Vec<Real> {
-    let mut output = vec![0.0; input.len()];
-
-    for (i, _) in input.iter().enumerate() {
-        let mut sum = 0.0;
-        for (j, &c) in b.iter().enumerate() {
-            if i >= j {
-                sum += c * input[i - j]
-            }
-        }
-        for (j, &c) in a.iter().enumerate() {
-            if i >= j {
-                sum -= c * output[i - j]
-            }
-        }
-        output[i] = sum / a.first().unwrap_or(&1.0);
-    }
-
-    output
-}
-
-pub fn iir_filter_3(b: &[Real], a: &[Real], input: &[Real]) -> Vec<Real> {
-    let mut output = vec![0.0; input.len()];
-
-    output = input
-        .iter()
-        .enumerate()
-        .map(|(i, _)| {
-            let sum: Real = b
-                .iter()
-                .enumerate()
-                .map(|(j, &c)| if i >= j { c * input[i - j] } else { 0.0 })
-                .sum::<Real>()
-                - a.iter()
-                .enumerate()
-                .map(|(j, &c)| if i >= j { c * output[i - j] } else { 0.0 })
-                .sum::<Real>();
-
-            sum / a.first().unwrap_or(&1.0)
-        })
-        .collect();
-
-    output
-}
-
-pub fn iir_filter_4_reals(b: &[Real], a: &[Real], input: &[Real]) -> Vec<Real> {
-    let mut output = vec![0.0; input.len()];
-
-    let sum = |vals: &[Real], coeffs: &[Real], n: usize| -> Real {
-        coeffs
-            .iter()
-            .take(n + 1)
-            .enumerate()
-            .map(|(j, &c)| c * vals[n - j])
-            .sum()
-    };
-
-    for (n, _) in input.iter().enumerate() {
-        output[n] = (sum(input, b, n) - sum(&output, a, n)) / a.first().unwrap_or(&1.0);
-    }
-
-    output
-}
-
-pub fn iir_filter_4<T>(b: &[T], a: &[T], input: &[T]) -> Vec<T>
-    where
-        T: Copy + Clone + Zero + Mul + Div<Output = T> + Sub<Output = T> + Sum<<T as Mul>::Output>,
+pub fn iir_filter<T>(b: &[T], a: &[T], input: &[T]) -> Vec<T>
+where
+    T: Copy + Clone + Zero + Mul + Div<Output = T> + Sub<Output = T> + Sum<<T as Mul>::Output>,
 {
     let mut output = vec![T::zero(); input.len()];
 
-    let sum = |vals: &[T], coeffs: &[T], n: usize| -> T {
+    let sum = |values: &[T], coeffs: &[T], n: usize| -> T {
         coeffs
             .iter()
             .take(n + 1)
             .enumerate()
-            .map(|(j, &c)| c * vals[n - j])
+            .map(|(j, &c)| c * values[n - j])
             .sum()
     };
 
+    let a0 = *a.first().unwrap();
+
     for (n, _) in input.iter().enumerate() {
-        output[n] = (sum(input, b, n) - sum(&output, a, n)) / *a.first().unwrap();
+        output[n] = (sum(input, b, n) - sum(&output, a, n)) / a0;
     }
 
     output
@@ -111,12 +31,12 @@ pub fn iir_filter_4<T>(b: &[T], a: &[T], input: &[T]) -> Vec<T>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test::Bencher;
     use num_complex::Complex64;
+    use test::Bencher;
 
-    const A: [Real; 4] = [1.00000000, -2.77555756e-16, 3.33333333e-01, -1.85037171e-17];
-    const B: [Real; 4] = [0.16666667, 0.5, 0.5, 0.16666667];
-    const X: [Real; 20] = [
+    const BR: [f64; 4] = [0.16666667, 0.5, 0.5, 0.16666667];
+    const AR: [f64; 4] = [1.00000000, -2.77555756e-16, 3.33333333e-01, -1.85037171e-17];
+    const XR: [f64; 20] = [
         -0.917843918645,
         0.141984778794,
         1.20536903482,
@@ -139,67 +59,113 @@ mod tests {
         0.9047198589,
     ];
 
-    #[test]
-    fn iir_1() {
-        let _ = iir_filter(
-            &Array1::from(B.to_vec()),
-            &Array1::from(A.to_vec()),
-            &Array1::from(X.to_vec()),
-        );
-    }
+    const BC: [(f64, f64); 3] = [(0.3339, -0.5573), (0.5591, -0.7406), (0.1648, -0.0743)];
+    const AC: [(f64, f64); 1] = [(0.0, 2.0)];
+    const XC: [(f64, f64); 20] = [
+        (0.0496, 0.8871),
+        (0.6477, 0.8209),
+        (0.6992, 0.9695),
+        (0.9586, 0.7425),
+        (0.6845, 0.0556),
+        (0.6139, 0.0842),
+        (0.5202, 0.5712),
+        (0.1096, 0.1592),
+        (0.3339, 0.5573),
+        (0.5591, 0.7406),
+        (0.1648, 0.0743),
+        (0.4051, 0.3390),
+        (0.1327, 0.7347),
+        (0.0356, 0.6056),
+        (0.9634, 0.2060),
+        (0.1658, 0.9736),
+        (0.0512, 0.6754),
+        (0.6978, 0.5226),
+        (0.5115, 0.6229),
+        (0.0914, 0.0996),
+    ];
 
     #[test]
-    fn iir_2() {
-        let _ = iir_filter_2_reals(&B, &A, &X);
+    fn iir_reals() {
+        let expected = [
+            -0.15297398950031305,
+            -0.4352578290502175,
+            -0.13604339698849033,
+            0.6975033265479628,
+            0.6564446924690288,
+            -0.4354824532561056,
+            -1.0892394611529292,
+            -0.5376765495627545,
+            0.517049992313214,
+            1.0522497471553531,
+            0.961854300373645,
+            0.695690094009605,
+            0.4243562950955321,
+            0.19626223182178915,
+            -0.027835124463393313,
+            -0.21172191545011781,
+            -0.17474556222276072,
+            0.06925840890119488,
+            0.3854458743074388,
+            0.6517708388193052,
+        ];
+
+        let out = iir_filter(&BR, &AR, &XR);
+
+        assert_eq!(out, expected);
+    }
+
+    fn cpx_vec(re_im: &[(f64, f64)]) -> Vec<Complex64> {
+        re_im
+            .iter()
+            .map(|(re, im)| Complex64::new(*re, *im))
+            .collect()
     }
 
     #[test]
-    fn iir_3() {
-        let _ = iir_filter_3(&B, &A, &X);
-    }
+    fn iir_complex() {
+        let bc = cpx_vec(&BC);
+        let ac = cpx_vec(&AC);
+        let xc = cpx_vec(&XC);
 
-    fn to_cpx(arr: &[Real]) -> Vec<Complex64> {
-        arr.iter().map(|&re| Complex64::new(re, 0.0)).collect()
-    }
+        let expected = cpx_vec(&[
+            (0.134280305, -0.255471135),
+            (0.18618957499999997, -0.67923611),
+            (0.027919629999999945, -0.9089692250000001),
+            (-0.08746344500000001, -1.0052700200000002),
+            (-0.27494569, -0.7663256),
+            (-0.369363405, -0.44446610499999994),
+            (-0.274228685, -0.5072756150000001),
+            (-0.05278100499999999, -0.47330946000000007),
+            (0.031660930000000004, -0.36471125),
+            (0.00904644, -0.61436519),
+            (0.0, -0.526974695),
+            (-0.05628506500000001, -0.309260055),
+            (0.030440230000000013, -0.4819955900000001),
+            (0.26031569000000004, -0.529823645),
+            (-0.022337434999999982, -0.490675775),
+            (-0.13423847000000003, -0.6700056999999999),
+            (0.29044938000000003, -0.69065858),
+            (0.13671998000000002, -0.5763649399999999),
+            (-0.09708795000000003, -0.67686477),
+            (-0.00697817500000001, -0.493575775),
+        ]);
 
-    #[test]
-    fn iir_4() {
-        let bc = to_cpx(&B);
-        let ac = to_cpx(&A);
-        let xc = to_cpx(&X);
+        let out = iir_filter(bc.as_slice(), ac.as_slice(), xc.as_slice());
 
-        let _ = iir_filter_4(bc.as_slice(), ac.as_slice(), xc.as_slice());
-    }
-
-    #[bench]
-    fn bench_iir_1(b: &mut Bencher) {
-        let b_arr = &Array1::from(B.to_vec());
-        let a_arr = &Array1::from(A.to_vec());
-        let inp_arr = &Array1::from(X.to_vec());
-        b.iter(|| iir_filter(b_arr, a_arr, inp_arr));
-    }
-
-    #[bench]
-    fn bench_iir_2_reals(b: &mut Bencher) {
-        b.iter(|| iir_filter_2_reals(&B, &A, &X));
-    }
-
-    #[bench]
-    fn bench_iir_3(b: &mut Bencher) {
-        b.iter(|| iir_filter_3(&B, &A, &X));
-    }
-
-    #[bench]
-    fn bench_iir_4_reals(b: &mut Bencher) {
-        b.iter(|| iir_filter_4(&B, &A, &X));
+        assert_eq!(out, expected);
     }
 
     #[bench]
-    fn bench_iir_4(b: &mut Bencher) {
-        let bc = to_cpx(&B);
-        let ac = to_cpx(&A);
-        let xc = to_cpx(&X);
+    fn bench_iir_reals(b: &mut Bencher) {
+        b.iter(|| iir_filter(&BR, &AR, &XR));
+    }
 
-        b.iter(|| iir_filter_4(bc.as_slice(), ac.as_slice(), xc.as_slice()));
+    #[bench]
+    fn bench_iir(b: &mut Bencher) {
+        let bc = cpx_vec(&BC);
+        let ac = cpx_vec(&AC);
+        let xc = cpx_vec(&XC);
+
+        b.iter(|| iir_filter(bc.as_slice(), ac.as_slice(), xc.as_slice()));
     }
 }

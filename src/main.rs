@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 #![feature(test)]
 
-mod iir;
 mod common;
+mod iir;
 
 use common::ToDecibel;
 use common::{RangePulse, ScanProperties, Target};
