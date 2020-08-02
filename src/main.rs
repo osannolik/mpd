@@ -1,5 +1,7 @@
 #![allow(dead_code)]
+#![feature(test)]
 
+mod iir;
 mod common;
 
 use common::ToDecibel;
