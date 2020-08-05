@@ -63,4 +63,14 @@ fn main() {
     video
         .to_file(Path::new("video.json"))
         .expect("Could not write to file");
+
+    let mut received_video = video;
+
+    received_video.pulse_compress(&p);
+
+    println!("Pulse Compress {:?}", received_video);
+
+    received_video
+        .to_file(Path::new("pulse_compress.json"))
+        .expect("Could not write to file");
 }

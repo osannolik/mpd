@@ -1,3 +1,5 @@
+use crate::iir;
+
 use ndarray::{s, Array1, Array2, Zip};
 use ndarray_rand::rand_distr::{StandardNormal, Uniform};
 use ndarray_rand::RandomExt;
@@ -6,7 +8,7 @@ use num_complex::Complex64;
 use num_traits::{FloatConst, Num, ToPrimitive};
 //use rand::Rng;
 use serde::Serialize;
-use std::iter::Sum;
+use std::iter::{FromIterator, Sum};
 use std::ops::{Add, Neg};
 
 use std::fs::File;
@@ -96,6 +98,16 @@ impl<T> Reshape1d<T> for Array1<T> {
 pub fn chirp_linear(t: &Array1<Real>, f0: Real, k: Real) -> Array1<Complex64> {
     t.map(|&t| -2.0 * Real::PI() * (f0 * t + k * t * t / 2.0))
         .map(|&im| Complex64::new(0.0, im).exp())
+}
+
+pub fn hanning(length: usize) -> Array1<Real> {
+    /*
+    let n = (length - 1) as Real;
+    Array1::linspace(0.0, n, length)
+        .map(|&i| 0.5 * (1.0 - Real::cos(2.0 * Real::PI() * i / n)))
+     */
+    let l = length as Real;
+    Array1::linspace(0.5, l - 0.5, length).map(|&n| Real::sin(Real::PI() * n / l).powf(2.0))
 }
 
 pub struct ScanProperties {
@@ -271,6 +283,36 @@ impl RangePulse {
         RangePulse {
             matrix: range_pulses,
         }
+    }
+
+    pub fn pulse_compress(&mut self, properties: &ScanProperties) -> () {
+        let send_pulse = properties.send_pulse(properties.sample_freq);
+        let pulse_len = send_pulse.len();
+        let window = hanning(pulse_len).map(|&re| Complex64::new(re, 0.0));
+        let window = &window / window.dot(&window).sqrt();
+        let pulse = window * send_pulse;
+
+        let (n_rs, n_pri) = (self.matrix.shape()[0], self.matrix.shape()[1]);
+        let (n_rs_pad, n_pri_pad) = (n_rs + pulse_len - 1, n_pri);
+        let mut padded = Array2::from_elem([n_rs_pad, n_pri_pad], Complex64::new(0.0, 0.0));
+        let pad = pulse_len / 2;
+
+        padded
+            .slice_mut(s![pad..(n_rs + pad), ..])
+            .assign(&self.matrix);
+
+        let coeffs: Array1<_> = pulse.iter().rev().map(|&c| c.conj()).collect();
+        let all_range_bins = Array1::from_iter(padded.t().iter().cloned());
+
+        let matched = iir::iir_filter(
+            coeffs.as_slice().unwrap(),
+            &[Complex64::new(1.0, 0.0)],
+            all_range_bins.as_slice().unwrap(),
+        );
+
+        let matched = Array2::from_shape_vec([n_pri_pad, n_rs_pad], matched).unwrap();
+
+        self.matrix = matched.t().slice(s![(pulse_len - 1).., ..]).into_owned();
     }
 
     pub fn to_file(&self, path: &std::path::Path) -> Result<(), std::io::Error> {
