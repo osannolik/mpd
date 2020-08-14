@@ -1,42 +1,27 @@
 use crate::iir;
 
+use core::marker::PhantomData;
+
+use rustfft::FFTplanner;
+
 use ndarray::{s, Array1, Array2, Zip};
 use ndarray_rand::rand_distr::{StandardNormal, Uniform};
 use ndarray_rand::RandomExt;
-//use ndarray_rand::rand_distr::Distribution;
+
 use num_complex::Complex64;
-use num_traits::{FloatConst, Num, ToPrimitive};
-//use rand::Rng;
+use num_traits::{FloatConst, Num, ToPrimitive, Zero};
+
 use serde::Serialize;
-use std::iter::{FromIterator, Sum};
-use std::ops::{Add, Neg};
 
 use std::fs::File;
 use std::io::Write;
+use std::iter::{FromIterator, Sum};
+use std::ops::{Add, Neg};
 
 pub type Real = f64;
 pub type Natural = u64;
 
 const SPEED_OF_LIGHT: Real = 2.997e8;
-/*
-/// A generic random value distribution for complex numbers.
-#[derive(Clone, Copy, Debug)]
-pub struct ComplexDistribution<Re, Im = Re> {
-    pub re: Re,
-    pub im: Im,
-}
-
-impl<T, Re, Im> Distribution<Complex<T>> for ComplexDistribution<Re, Im>
-    where
-        T: Num + Clone,
-        Re: Distribution<T>,
-        Im: Distribution<T>,
-{
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Complex<T> {
-        Complex::new(self.re.sample(rng), self.im.sample(rng))
-    }
-}
-*/
 
 #[derive(Copy, Clone)]
 pub struct Decibel(Real);
@@ -180,39 +165,79 @@ pub struct Target {
     pub level: Decibel,
 }
 
-#[derive(Debug, Serialize)]
-pub struct RangePulse {
-    matrix: Array2<Complex64>,
+pub trait DataMatrix<T = Self>: Add<T, Output = T> + Serialize {
+    fn zero(size: (usize, usize)) -> Self;
 }
 
-impl Add for RangePulse {
-    type Output = Self;
+#[derive(Debug, Serialize)]
+pub struct Time {}
 
-    fn add(self, rhs: Self) -> Self::Output {
-        RangePulse {
-            matrix: self.matrix + rhs.matrix,
+#[derive(Debug, Serialize)]
+pub struct Freq {}
+
+#[derive(Debug, Serialize)]
+pub struct RP<M: DataMatrix, D> {
+    matrix: M,
+    _domain: PhantomData<D>,
+}
+
+impl<M: DataMatrix, D> RP<M, D> {
+    pub fn new(matrix: M) -> Self {
+        Self {
+            matrix: matrix,
+            _domain: PhantomData,
         }
     }
 }
 
-impl Sum for RangePulse {
+impl<M: DataMatrix, D> Add for RP<M, D> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self::Output::new(self.matrix + rhs.matrix)
+    }
+}
+
+impl<M: DataMatrix, D> Sum for RP<M, D> {
     fn sum<I: Iterator<Item = Self>>(mut iter: I) -> Self {
         if let Some(init) = iter.next() {
-            iter.fold(
-                RangePulse {
-                    matrix: init.matrix,
-                },
-                |acc, item| RangePulse {
-                    matrix: acc.matrix + item.matrix,
-                },
-            )
+            iter.fold(init, |acc, item| acc + item)
         } else {
-            RangePulse {
-                matrix: Array2::from_elem([0, 0], Complex64::new(0.0, 0.0)),
+            Self {
+                matrix: M::zero((0, 0)),
+                _domain: PhantomData,
             }
         }
     }
 }
+
+pub trait Storable: Serialize {
+    fn to_file(&self, path: &std::path::Path) -> Result<(), std::io::Error> {
+        let mut file = File::create(&path)?;
+        let s = serde_json::to_string(self)?;
+        file.write_all(s.as_bytes())?;
+        Ok(())
+    }
+}
+
+impl<M: DataMatrix, D> Storable for RP<M, D> {}
+
+pub type ComplexMatrix = Array2<Complex64>;
+
+impl DataMatrix for ComplexMatrix {
+    fn zero(size: (usize, usize)) -> Self {
+        ComplexMatrix::from_elem(size, Complex64::zero())
+    }
+}
+
+impl<D> RP<ComplexMatrix, D> {
+    fn size(&self) -> (usize, usize) {
+        (self.matrix.nrows(), self.matrix.ncols())
+    }
+}
+
+pub type RangePulse = RP<ComplexMatrix, Time>;
+pub type RangeDoppler = RP<ComplexMatrix, Freq>;
 
 impl RangePulse {
     pub fn noise<L: Into<Decibel>>(level: L, properties: &ScanProperties) -> RangePulse {
@@ -226,11 +251,11 @@ impl RangePulse {
         let im = s * Array2::random(shape, StandardNormal);
         let mut re = s * Array2::random(shape, StandardNormal);
 
-        RangePulse {
-            matrix: Zip::from(&mut re)
+        Self::new(
+            Zip::from(&mut re)
                 .and(&im)
                 .apply_collect(|&mut re, &im| Complex64::new(re, im)),
-        }
+        )
     }
 
     pub fn clutter<L: Into<Decibel>>(level: L, properties: &ScanProperties) -> RangePulse {
@@ -241,8 +266,9 @@ impl RangePulse {
         let pri_range = Array1::linspace(1.0, nof_pulses as Real, nof_pulses).to_2d();
         let freqs_scale = level.into().unit()
             * freqs_range.map(|&f| Real::powf(10.0, -1.25 / 81.0 * Real::powf(f * 2048.0, 2.0)));
+
         let to_weight = |n: &Real| -> Complex64 {
-            Complex64::new(0.0, 2.0 * Real::PI() * n).exp() * (-2.0 * n.ln()).sqrt()
+            Complex64::from_polar(&(-2.0 * n.ln()).sqrt(), &(2.0 * Real::PI() * n))
         };
         let weights = Array2::random((nof_samples, nof_comps), Uniform::new(Real::EPSILON, 1.0))
             .map(to_weight)
@@ -250,11 +276,9 @@ impl RangePulse {
         let phase = phase_range
             .t()
             .dot(&pri_range)
-            .map(|&im| Complex64::new(0.0, im).exp());
+            .map(|im| Complex64::from_polar(&1.0, im));
 
-        RangePulse {
-            matrix: weights.dot(&phase),
-        }
+        Self::new(weights.dot(&phase))
     }
 
     pub fn target(target: &Target, properties: &ScanProperties) -> RangePulse {
@@ -275,26 +299,23 @@ impl RangePulse {
         let start = target_rx_bin.max(0);
         let stop = start + echo.dim().0;
 
-        let mut range_pulses =
-            Array2::from_elem(properties.receive_shape(), Complex64::new(0.0, 0.0));
+        let mut range_pulses = ComplexMatrix::zeros(properties.receive_shape());
 
         range_pulses.slice_mut(s![start..stop, ..]).assign(&echo);
 
-        RangePulse {
-            matrix: range_pulses,
-        }
+        Self::new(range_pulses)
     }
 
-    pub fn pulse_compress(&mut self, properties: &ScanProperties) -> () {
+    pub fn pulse_compress(&mut self, properties: &ScanProperties) {
         let send_pulse = properties.send_pulse(properties.sample_freq);
         let pulse_len = send_pulse.len();
         let window = hanning(pulse_len).map(|&re| Complex64::new(re, 0.0));
         let window = &window / window.dot(&window).sqrt();
         let pulse = window * send_pulse;
 
-        let (n_rs, n_pri) = (self.matrix.shape()[0], self.matrix.shape()[1]);
+        let (n_rs, n_pri) = self.size();
         let (n_rs_pad, n_pri_pad) = (n_rs + pulse_len - 1, n_pri);
-        let mut padded = Array2::from_elem([n_rs_pad, n_pri_pad], Complex64::new(0.0, 0.0));
+        let mut padded = ComplexMatrix::from_elem([n_rs_pad, n_pri_pad], Complex64::new(0.0, 0.0));
         let pad = pulse_len / 2;
 
         padded
@@ -310,19 +331,36 @@ impl RangePulse {
             all_range_bins.as_slice().unwrap(),
         );
 
-        let matched = Array2::from_shape_vec([n_pri_pad, n_rs_pad], matched).unwrap();
+        let matched = ComplexMatrix::from_shape_vec([n_pri_pad, n_rs_pad], matched).unwrap();
 
         self.matrix = matched.t().slice(s![(pulse_len - 1).., ..]).into_owned();
     }
 
-    pub fn to_file(&self, path: &std::path::Path) -> Result<(), std::io::Error> {
-        let mut file = File::create(&path)?;
-        let s = serde_json::to_string(self)?;
-        file.write_all(s.as_bytes())?;
-        Ok(())
+    pub fn doppler_filtering(self) -> RangeDoppler {
+        let (n_rs, n_pri) = self.size();
+        let window = hanning(n_pri).map(|&re| Complex64::new(re, 0.0));
+        let window = &window / window.dot(&window).sqrt();
+        let window2d = ComplexMatrix::ones([n_rs, 1]).dot(&window.to_2d());
+
+        let mut range_pulse: ComplexMatrix = window2d * &self.matrix;
+
+        let mut planner: FFTplanner<f64> = FFTplanner::new(false);
+        let fft = planner.plan_fft(n_pri);
+
+        let mut range_doppler: ComplexMatrix = DataMatrix::zero(self.size());
+
+        Zip::from(range_pulse.genrows_mut())
+            .and(range_doppler.genrows_mut())
+            .apply(|mut rp, mut rd| {
+                fft.process(rp.as_slice_mut().unwrap(), rd.as_slice_mut().unwrap());
+            });
+
+        RangeDoppler::new(range_doppler)
     }
 }
 
-pub struct RangeDoppler {
-    matrix: Array2<Complex64>,
+impl From<RangePulse> for RangeDoppler {
+    fn from(range_pulse: RangePulse) -> Self {
+        range_pulse.doppler_filtering()
+    }
 }

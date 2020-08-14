@@ -4,35 +4,11 @@
 mod common;
 mod iir;
 
-use common::ToDecibel;
-use common::{RangePulse, ScanProperties, Target};
-
-use ndarray; //::{self, s}; //::{self, prelude::*};
-             //use ndarray::Array1;
-use num_complex::Complex;
-use rustfft::FFTplanner;
+use crate::common::{RangeDoppler, RangePulse, ScanProperties, Storable, Target, ToDecibel};
 
 use std::path::Path;
 
 fn main() {
-    let c: Complex<f64> = Complex::new(1.0, 0.1);
-
-    println!("{:?}", c);
-
-    let mut input = ndarray::Array::from_elem(8, c);
-    let mut output = ndarray::Array::zeros(input.shape());
-
-    let mut planner = FFTplanner::new(false);
-    let fft = planner.plan_fft(input.len());
-
-    fft.process(
-        input.as_slice_mut().unwrap(),
-        output.as_slice_mut().unwrap(),
-    );
-
-    println!("Input {:?}", input);
-    println!("Output {:?}", output);
-
     let p = ScanProperties {
         carrier_freq: 3.0e9,
         sample_freq: 1.0e6,
@@ -72,5 +48,15 @@ fn main() {
 
     received_video
         .to_file(Path::new("pulse_compress.json"))
+        .expect("Could not write to file");
+
+    // let range_doppler = received_video.doppler_filtering();
+    // let range_doppler: RangeDoppler = received_video.into();
+    let range_doppler = RangeDoppler::from(received_video);
+
+    println!("Doppler Filtering {:?}", range_doppler);
+
+    range_doppler
+        .to_file(Path::new("range_doppler.json"))
         .expect("Could not write to file");
 }
