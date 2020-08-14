@@ -176,12 +176,12 @@ pub struct Time {}
 pub struct Freq {}
 
 #[derive(Debug, Serialize)]
-pub struct RP<M: DataMatrix, D> {
+pub struct RP<M, D> {
     matrix: M,
     _domain: PhantomData<D>,
 }
 
-impl<M: DataMatrix, D> RP<M, D> {
+impl<M, D> RP<M, D> {
     pub fn new(matrix: M) -> Self {
         Self {
             matrix: matrix,
