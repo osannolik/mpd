@@ -3,6 +3,7 @@
 
 mod common;
 mod iir;
+mod mpd;
 
 use crate::common::{RangeDoppler, RangePulse, ScanProperties, Storable, Target, ToDecibel};
 
