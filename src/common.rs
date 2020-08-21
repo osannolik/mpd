@@ -3,7 +3,7 @@ use core::marker::PhantomData;
 use std::fs::File;
 use std::io::Write;
 use std::iter::Sum;
-use std::ops::{Add, Neg};
+use std::ops::{Add, Neg, Sub};
 
 use num_traits::{Num, ToPrimitive};
 use serde::Serialize;
@@ -16,9 +16,22 @@ const SPEED_OF_LIGHT: Real = 2.997e8;
 #[derive(Copy, Clone)]
 pub struct Decibel(Real);
 
-impl Decibel {
-    pub fn unit(self) -> Real {
-        Real::powf(10.0, self.0 / 20.0)
+#[derive(Copy, Clone)]
+pub struct Ratio(Real);
+
+impl Add for Decibel {
+    type Output = Decibel;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl Sub for Decibel {
+    type Output = Decibel;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self(self.0 - rhs.0)
     }
 }
 
@@ -30,21 +43,79 @@ impl Neg for Decibel {
     }
 }
 
-impl<T: Num + ToPrimitive> From<T> for Decibel {
-    fn from(value: T) -> Self {
-        Self {
-            0: value.to_f64().unwrap(),
-        }
+impl From<Decibel> for Ratio {
+    fn from(db: Decibel) -> Self {
+        Self(Real::powf(10.0, db.0 / 20.0))
     }
 }
 
-pub trait ToDecibel<T> {
-    fn db(self) -> Decibel;
+impl From<Ratio> for Decibel {
+    fn from(ratio: Ratio) -> Self {
+        Self(20.0 * Real::log10(ratio.0))
+    }
+}
+/*
+macro_rules! impl_value_for {
+    ($DR: ty) => {
+        impl $DR {
+            #[inline]
+            pub fn value(self) -> Real {
+                self.0
+            }
+        }
+    };
 }
 
-impl<T: Num + ToPrimitive> ToDecibel<T> for T {
+impl_value_for!(Decibel);
+impl_value_for!(Ratio);
+*/
+
+
+macro_rules! impl_from_primitive_for {
+    ($DR: ty) => {
+        impl<T: Num + ToPrimitive> From<T> for $DR {
+            #[inline]
+            fn from(value: T) -> Self {
+                Self(value.to_f64().unwrap())
+            }
+        }
+    };
+}
+
+impl_from_primitive_for!(Decibel);
+impl_from_primitive_for!(Ratio);
+
+impl From<Decibel> for Real {
+    fn from(db: Decibel) -> Self {
+        db.0
+    }
+}
+
+impl From<Ratio> for Real {
+    fn from(ratio: Ratio) -> Self {
+        ratio.0
+    }
+}
+
+pub trait Units {
+    fn db(self) -> Decibel;
+
+    fn ratio(self) -> Ratio;
+
+    fn value(self) -> Real;
+}
+
+impl<T: Into<Decibel> + Into<Ratio> + Into<Real>> Units for T {
     fn db(self) -> Decibel {
-        Decibel::from(self)
+        self.into()
+    }
+
+    fn ratio(self) -> Ratio {
+        self.into()
+    }
+
+    fn value(self) -> Real {
+        self.into()
     }
 }
 
