@@ -5,7 +5,7 @@ use std::io::Write;
 use std::iter::Sum;
 use std::ops::{Add, Neg, Sub};
 
-use num_traits::{Num, ToPrimitive};
+use num_traits::{FromPrimitive, Num, ToPrimitive};
 use serde::Serialize;
 
 pub type Real = f64;
@@ -44,32 +44,18 @@ impl Neg for Decibel {
 }
 
 impl From<Decibel> for Ratio {
+    #[inline]
     fn from(db: Decibel) -> Self {
         Self(Real::powf(10.0, db.0 / 20.0))
     }
 }
 
 impl From<Ratio> for Decibel {
+    #[inline]
     fn from(ratio: Ratio) -> Self {
         Self(20.0 * Real::log10(ratio.0))
     }
 }
-/*
-macro_rules! impl_value_for {
-    ($DR: ty) => {
-        impl $DR {
-            #[inline]
-            pub fn value(self) -> Real {
-                self.0
-            }
-        }
-    };
-}
-
-impl_value_for!(Decibel);
-impl_value_for!(Ratio);
-*/
-
 
 macro_rules! impl_from_primitive_for {
     ($DR: ty) => {
@@ -85,17 +71,19 @@ macro_rules! impl_from_primitive_for {
 impl_from_primitive_for!(Decibel);
 impl_from_primitive_for!(Ratio);
 
-impl From<Decibel> for Real {
-    fn from(db: Decibel) -> Self {
-        db.0
-    }
+macro_rules! impl_to_primitive_for {
+    ($DR: ty, $T: ty) => {
+        impl From<$DR> for $T {
+            #[inline]
+            fn from(x: $DR) -> Self {
+                <$T>::from_f64(x.0).unwrap()
+            }
+        }
+    };
 }
 
-impl From<Ratio> for Real {
-    fn from(ratio: Ratio) -> Self {
-        ratio.0
-    }
-}
+impl_to_primitive_for!(Decibel, Real);
+impl_to_primitive_for!(Ratio, Real);
 
 pub trait Units {
     fn db(self) -> Decibel;
@@ -106,14 +94,17 @@ pub trait Units {
 }
 
 impl<T: Into<Decibel> + Into<Ratio> + Into<Real>> Units for T {
+    #[inline]
     fn db(self) -> Decibel {
         self.into()
     }
 
+    #[inline]
     fn ratio(self) -> Ratio {
         self.into()
     }
 
+    #[inline]
     fn value(self) -> Real {
         self.into()
     }

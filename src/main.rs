@@ -5,7 +5,7 @@ mod common;
 mod iir;
 mod mpd;
 
-use crate::common::{RangeDoppler, RangePulse, ScanProperties, Storable, Target, ToDecibel};
+use crate::common::{RangeDoppler, RangePulse, ScanProperties, Storable, Target, Units};
 
 use std::path::Path;
 
@@ -32,7 +32,7 @@ fn main() {
     ];
 
     let video = RangePulse::noise(-75.0.db(), &p)
-        + RangePulse::clutter((-75.0 + 40.0).db(), &p)
+        + RangePulse::clutter(-75.0.db() + 40.0.db(), &p)
         + targets.iter().map(|tgt| RangePulse::target(tgt, &p)).sum();
 
     println!("Video {:?}", video);

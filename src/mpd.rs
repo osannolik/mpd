@@ -1,4 +1,6 @@
-use crate::common::{DataMatrix, Decibel, RangeDoppler, RangePulse, Real, ScanProperties, Target};
+use crate::common::{
+    DataMatrix, Decibel, RangeDoppler, RangePulse, Real, ScanProperties, Target, Units,
+};
 use crate::iir;
 
 use std::iter::FromIterator;
@@ -72,12 +74,15 @@ impl ScanProperties {
 }
 
 impl RangePulse<CpxMatrix> {
-    pub fn noise<L: Into<Decibel>>(level: L, properties: &ScanProperties) -> RangePulse<CpxMatrix> {
+    pub fn noise<L>(level: L, properties: &ScanProperties) -> RangePulse<CpxMatrix>
+    where
+        L: Into<Decibel>,
+    {
         // using Array2::random with ComplexDistribution causes
         // "note: perhaps two different versions of crate `rand_core` are being used?"
         // let complex_dist = ComplexDistribution {re: StandardNormal, im: StandardNormal};
 
-        let s = level.into().unit() / Real::SQRT_2();
+        let s: Real = level.into().ratio().value() / Real::SQRT_2();
         let shape = properties.receive_shape();
         // Uniform?
         let im = s * Array2::random(shape, StandardNormal);
@@ -90,16 +95,16 @@ impl RangePulse<CpxMatrix> {
         )
     }
 
-    pub fn clutter<L: Into<Decibel>>(
-        level: L,
-        properties: &ScanProperties,
-    ) -> RangePulse<CpxMatrix> {
+    pub fn clutter<L>(level: L, properties: &ScanProperties) -> RangePulse<CpxMatrix>
+    where
+        L: Into<Decibel>,
+    {
         let (nof_comps, nof_pulses, nof_samples) =
             (11, properties.nof_pulses, properties.nof_receive_samples());
         let freqs_range = Array1::linspace(-0.005, 0.005, nof_comps).to_2d();
         let phase_range = 2.0 * Real::PI() * &freqs_range;
         let pri_range = Array1::linspace(1.0, nof_pulses as Real, nof_pulses).to_2d();
-        let freqs_scale = level.into().unit()
+        let freqs_scale = level.into().ratio().value()
             * freqs_range.map(|&f| Real::powf(10.0, -1.25 / 81.0 * Real::powf(f * 2048.0, 2.0)));
 
         let to_weight = |n: &Real| -> Complex64 {
@@ -120,7 +125,7 @@ impl RangePulse<CpxMatrix> {
         let phase_shift_per_pulse = 2.0 * Real::PI() * properties.doppler_shift(target.velocity)
             / properties.pulse_repetition_freq();
         let nof_pulses = properties.nof_pulses;
-        let amp = target.level.unit();
+        let amp = target.level.ratio().value();
         let reflection = Array1::linspace(0.0, (nof_pulses - 1) as Real, nof_pulses)
             .map(|&x| Complex64::from_polar(&amp, &(phase_shift_per_pulse * x)))
             .to_2d();
