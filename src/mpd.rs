@@ -6,19 +6,26 @@ use crate::iir;
 use std::iter::FromIterator;
 
 use num_complex::Complex64;
-use num_traits::{FloatConst, Zero};
+use num_traits::{FloatConst, Num};
 
 use rustfft::FFTplanner;
 
 use ndarray::{s, Array1, Array2, Zip};
 use ndarray_rand::rand_distr::{StandardNormal, Uniform};
 use ndarray_rand::RandomExt;
+use serde::Serialize;
+//use std::fs::File;
+//use std::io::Write;
+use std::ops::Add;
+//use std::path::Path;
 
 pub type CpxMatrix = Array2<Complex64>;
+type RealMatrix = Array2<Real>;
+type BoolMatrix = Array2<bool>;
 
-impl DataMatrix for CpxMatrix {
+impl<T: Num + Clone + Serialize + Add> DataMatrix for Array2<T> {
     fn zero(size: (usize, usize)) -> Self {
-        CpxMatrix::from_elem(size, Complex64::zero())
+        Array2::from_elem(size, T::zero())
     }
 
     fn size(&self) -> (usize, usize) {
@@ -196,6 +203,64 @@ impl RangePulse<CpxMatrix> {
             });
 
         RangeDoppler::new(range_doppler)
+    }
+}
+
+pub struct CfarConfig {
+    pub mainlobe_clutter_margin: usize,
+    pub min_value: Decibel,
+}
+
+fn local_max(matrix: &RealMatrix, edge_level: Decibel, cell_radius: usize) -> BoolMatrix {
+    let (n_rs, n_pri) = (matrix.nrows(), matrix.ncols());
+    let r = cell_radius as isize;
+    let mut edged_matrix = Array2::from_elem(
+        [n_rs + 2 * cell_radius, n_pri + 2 * cell_radius],
+        edge_level.value(),
+    );
+    edged_matrix
+        .slice_mut(s![r..r + n_rs as isize, r..r + n_pri as isize])
+        .assign(matrix);
+
+    let mut is_local_max = BoolMatrix::from_elem([n_rs, n_pri], true);
+    for dx in -r..=r {
+        for dy in -r..=r {
+            if dx != 0 || dy != 0 {
+                let s = s![
+                    r + dx..r + dx + n_rs as isize,
+                    r + dy..r + dy + n_pri as isize
+                ];
+                is_local_max =
+                    is_local_max & (matrix - &edged_matrix.slice(s)).map(|&diff| diff > 0.0)
+            }
+        }
+    }
+    is_local_max
+}
+
+impl RangeDoppler<CpxMatrix> {
+    pub fn cfar(&self, config: &CfarConfig) -> Vec<Target> {
+        let abs_matrix_db = self.matrix.map(|&x| x.norm().ratio().db().value());
+
+        let no_mainlobe_pris =
+            config.mainlobe_clutter_margin..abs_matrix_db.ncols() - config.mainlobe_clutter_margin;
+        let _noise = abs_matrix_db
+            .slice(s![.., no_mainlobe_pris])
+            .mean()
+            .unwrap();
+
+        let _lmax_det = local_max(&abs_matrix_db, config.min_value, 1);
+        /*
+                      let mut file = File::create(Path::new("local_max.json")).unwrap();
+                      let s = serde_json::to_string(&lmax_det).unwrap();
+                      file.write_all(s.as_bytes());
+        */
+
+        vec![Target {
+            range: 0.0,
+            velocity: 0.0,
+            level: Decibel::from(0.0),
+        }]
     }
 }
 

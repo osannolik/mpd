@@ -7,6 +7,7 @@ mod mpd;
 
 use crate::common::{RangeDoppler, RangePulse, ScanProperties, Storable, Target, Units};
 
+use crate::mpd::CfarConfig;
 use std::path::Path;
 
 fn main() {
@@ -31,8 +32,9 @@ fn main() {
         },
     ];
 
-    let video = RangePulse::noise(-75.0.db(), &p)
-        + RangePulse::clutter(-75.0.db() + 40.0.db(), &p)
+    let noise_level = -75.0.db();
+    let video = RangePulse::noise(noise_level, &p)
+        + RangePulse::clutter(noise_level + 40.0.db(), &p)
         + targets.iter().map(|tgt| RangePulse::target(tgt, &p)).sum();
 
     println!("Video {:?}", video);
@@ -60,4 +62,10 @@ fn main() {
     range_doppler
         .to_file(Path::new("range_doppler.json"))
         .expect("Could not write to file");
+
+    let cfg = CfarConfig {
+        mainlobe_clutter_margin: 6,
+        min_value: noise_level - 10.0.db(),
+    };
+    let _x = range_doppler.cfar(&cfg);
 }

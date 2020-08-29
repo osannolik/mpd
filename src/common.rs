@@ -172,7 +172,7 @@ pub struct Target {
     pub level: Decibel,
 }
 
-pub trait DataMatrix<T = Self>: Add<T, Output = T> + Serialize {
+pub trait DataMatrix<T = Self>: Serialize {
     fn zero(size: (usize, usize)) -> Self;
 
     fn size(&self) -> (usize, usize);
@@ -203,7 +203,7 @@ impl<M: DataMatrix, D> Inti<M, D> {
     }
 }
 
-impl<M: DataMatrix, D> Add for Inti<M, D> {
+impl<M: DataMatrix + Add<M, Output = M>, D> Add for Inti<M, D> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -211,7 +211,7 @@ impl<M: DataMatrix, D> Add for Inti<M, D> {
     }
 }
 
-impl<M: DataMatrix, D> Sum for Inti<M, D> {
+impl<M: DataMatrix + Add<M, Output = M>, D> Sum for Inti<M, D> {
     fn sum<I: Iterator<Item = Self>>(mut iter: I) -> Self {
         if let Some(init) = iter.next() {
             iter.fold(init, |acc, item| acc + item)
