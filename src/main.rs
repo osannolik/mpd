@@ -70,5 +70,5 @@ fn main() {
         n_rs_thr: 16,
         n_guard_bins: 1,
     };
-    let _x = range_doppler.cfar(&cfg);
+    let _x = range_doppler.cfar(&cfg, &p);
 }

@@ -12,10 +12,10 @@ pub type Real = f64;
 
 const SPEED_OF_LIGHT: Real = 2.997e8;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Decibel(Real);
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Ratio(Real);
 
 impl Add for Decibel {
@@ -140,8 +140,12 @@ impl ScanProperties {
         self.sample_freq / (self.nof_range_bins as Real)
     }
 
+    pub fn to_range(&self, range_bin: usize) -> Real {
+        self.range_bin_length() * range_bin as Real
+    }
+
     pub fn unambiguous_range(&self) -> Real {
-        (self.nof_range_bins as Real) * self.range_bin_length()
+        self.to_range(self.nof_range_bins)
     }
 
     pub fn unambiguous_velocity(&self) -> Real {
@@ -165,6 +169,7 @@ impl ScanProperties {
     }
 }
 
+#[derive(Debug)]
 pub struct Target {
     pub range: Real,
     pub velocity: Real,

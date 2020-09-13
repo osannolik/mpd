@@ -78,6 +78,10 @@ impl ScanProperties {
         let sweep_rate = sweep_freq / self.sample_freq / n as Real;
         chirp_linear(&t, 0.0, sweep_rate)
     }
+
+    pub fn pulse_compress_rb_start(&self) -> usize {
+        self.nof_send_samples() / 2
+    }
 }
 
 impl RangePulse<CpxMatrix> {
@@ -163,7 +167,7 @@ impl RangePulse<CpxMatrix> {
         let (n_rs, n_pri) = self.matrix.size();
         let (n_rs_pad, n_pri_pad) = (n_rs + pulse_len - 1, n_pri);
         let mut padded = CpxMatrix::from_elem([n_rs_pad, n_pri_pad], Complex64::new(0.0, 0.0));
-        let pad = pulse_len / 2;
+        let pad = properties.pulse_compress_rb_start();
 
         padded
             .slice_mut(s![pad..(n_rs + pad), ..])
@@ -282,7 +286,7 @@ fn local_threshold(matrix: &RealMatrix, n_rs_thr: usize, n_guard_bins: usize) ->
 }
 
 impl RangeDoppler<CpxMatrix> {
-    pub fn cfar(&self, config: &CfarConfig) -> Vec<Target> {
+    pub fn cfar(&self, config: &CfarConfig, properties: &ScanProperties) -> Vec<Target> {
         let abs_matrix_db: RealMatrix = self.matrix.map(|&x| x.norm().ratio().db().value());
 
         let no_ml_clutter_pris = s![
@@ -308,19 +312,20 @@ impl RangeDoppler<CpxMatrix> {
             allowed
         };
 
-        let _dets = is_allowed_region & is_local_max & is_above_threshold;
-/*
-        let mut file = File::create(Path::new("threshold.json")).unwrap();
-        let s = serde_json::to_string(&threshold).unwrap();
-        file.write_all(s.as_bytes());
+        let detections: BoolMatrix = is_allowed_region & is_local_max & is_above_threshold;
 
- */
+        let n_rb_min = properties.nof_send_samples() - properties.pulse_compress_rb_start();
 
-        vec![Target {
-            range: 0.0,
-            velocity: 0.0,
-            level: Decibel::from(0.0),
-        }]
+        detections
+            .indexed_iter()
+            .filter(|&(_, &is_det)| is_det)
+            .map(|((rb, pri), _)| Target {
+                range: properties.to_range(n_rb_min + rb),
+                velocity: properties.unambiguous_velocity() * pri as Real
+                    / properties.nof_pulses as Real,
+                level: 0.0.db(),
+            })
+            .collect()
     }
 }
 
