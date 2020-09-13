@@ -66,6 +66,9 @@ fn main() {
     let cfg = CfarConfig {
         mainlobe_clutter_margin: 6,
         min_value: noise_level - 10.0.db(),
+        threshold_offset: 15.db(),
+        n_rs_thr: 16,
+        n_guard_bins: 1,
     };
     let _x = range_doppler.cfar(&cfg);
 }

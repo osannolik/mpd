@@ -9,7 +9,6 @@ use num_traits::{FromPrimitive, Num, ToPrimitive};
 use serde::Serialize;
 
 pub type Real = f64;
-pub type Natural = u64;
 
 const SPEED_OF_LIGHT: Real = 2.997e8;
 

@@ -6,11 +6,11 @@ use crate::iir;
 use std::iter::FromIterator;
 
 use num_complex::Complex64;
-use num_traits::{FloatConst, Num};
+use num_traits::{FloatConst, Num, Zero};
 
 use rustfft::FFTplanner;
 
-use ndarray::{s, Array1, Array2, Zip};
+use ndarray::{s, Array1, Array2, Axis, Zip};
 use ndarray_rand::rand_distr::{StandardNormal, Uniform};
 use ndarray_rand::RandomExt;
 use serde::Serialize;
@@ -209,6 +209,9 @@ impl RangePulse<CpxMatrix> {
 pub struct CfarConfig {
     pub mainlobe_clutter_margin: usize,
     pub min_value: Decibel,
+    pub threshold_offset: Decibel,
+    pub n_rs_thr: usize,
+    pub n_guard_bins: usize,
 }
 
 fn local_max(matrix: &RealMatrix, edge_level: Decibel, cell_radius: usize) -> BoolMatrix {
@@ -238,23 +241,80 @@ fn local_max(matrix: &RealMatrix, edge_level: Decibel, cell_radius: usize) -> Bo
     is_local_max
 }
 
+fn local_threshold(matrix: &RealMatrix, n_rs_thr: usize, n_guard_bins: usize) -> RealMatrix {
+    let (n_rs, n_pri) = (matrix.nrows(), matrix.ncols());
+    let pad = n_rs_thr + n_guard_bins;
+    let n_rb_pad = n_rs + 2 * pad + 1;
+
+    let mut padded = RealMatrix::from_elem([n_rb_pad, n_pri], 0.0);
+
+    let first_range_bins = s![1 + n_guard_bins..1 + n_guard_bins + pad, ..];
+    let last_range_bins = s![n_rs - n_guard_bins - pad - 1..n_rs - n_guard_bins - 1, ..];
+
+    // Repeat first and last range bins and let first row be 0
+    padded
+        .slice_mut(s![1..=pad, ..])
+        .assign(&matrix.slice(first_range_bins));
+    padded
+        .slice_mut(s![1 + pad..=pad + n_rs, ..])
+        .assign(&matrix);
+    padded
+        .slice_mut(s![1 + pad + n_rs.., ..])
+        .assign(&matrix.slice(last_range_bins));
+
+    // Cumulative sum and then difference with shiftet by n gives average in interval of n
+    padded.accumulate_axis_inplace(Axis(0), |&prev, curr| *curr += prev);
+    let avg = (&padded.slice(s![n_rs_thr.., ..]) - &padded.slice(s![..n_rb_pad - n_rs_thr, ..]))
+        / n_rs_thr as Real;
+
+    let delta = 1 + n_rs_thr + 2 * n_guard_bins;
+    let n_avg = n_rb_pad - n_rs_thr;
+
+    // Greatest of early and late average
+    let (early, late) = (
+        avg.slice(s![..n_avg - delta, ..]),
+        avg.slice(s![delta.., ..]),
+    );
+
+    Zip::from(early)
+        .and(late)
+        .apply_collect(|&f, &l| Real::max(f, l))
+}
+
 impl RangeDoppler<CpxMatrix> {
     pub fn cfar(&self, config: &CfarConfig) -> Vec<Target> {
-        let abs_matrix_db = self.matrix.map(|&x| x.norm().ratio().db().value());
+        let abs_matrix_db: RealMatrix = self.matrix.map(|&x| x.norm().ratio().db().value());
 
-        let no_mainlobe_pris =
-            config.mainlobe_clutter_margin..abs_matrix_db.ncols() - config.mainlobe_clutter_margin;
-        let _noise = abs_matrix_db
-            .slice(s![.., no_mainlobe_pris])
-            .mean()
-            .unwrap();
+        let no_ml_clutter_pris = s![
+            ..,
+            config.mainlobe_clutter_margin..abs_matrix_db.ncols() - config.mainlobe_clutter_margin
+        ];
+        let noise = abs_matrix_db.slice(no_ml_clutter_pris).mean().unwrap();
 
-        let _lmax_det = local_max(&abs_matrix_db, config.min_value, 1);
-        /*
-                      let mut file = File::create(Path::new("local_max.json")).unwrap();
-                      let s = serde_json::to_string(&lmax_det).unwrap();
-                      file.write_all(s.as_bytes());
-        */
+        let threshold: RealMatrix =
+            local_threshold(&abs_matrix_db, config.n_rs_thr, config.n_guard_bins).map(|&lth| {
+                config.threshold_offset.db().value() + noise + (lth - noise).max(Real::zero())
+            });
+
+        let is_above_threshold: BoolMatrix = Zip::from(&abs_matrix_db)
+            .and(&threshold)
+            .apply_collect(|signal, thd| signal > thd);
+
+        let is_local_max: BoolMatrix = local_max(&abs_matrix_db, config.min_value, 1);
+
+        let is_allowed_region: BoolMatrix = {
+            let mut allowed = BoolMatrix::from_elem(abs_matrix_db.size(), false);
+            allowed.slice_mut(no_ml_clutter_pris).fill(true);
+            allowed
+        };
+
+        let _dets = is_allowed_region & is_local_max & is_above_threshold;
+/*
+        let mut file = File::create(Path::new("threshold.json")).unwrap();
+        let s = serde_json::to_string(&threshold).unwrap();
+        file.write_all(s.as_bytes());
+
+ */
 
         vec![Target {
             range: 0.0,
