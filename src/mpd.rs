@@ -219,23 +219,23 @@ pub struct CfarConfig {
 }
 
 fn local_max(matrix: &RealMatrix, edge_level: Decibel, cell_radius: usize) -> BoolMatrix {
-    let (n_rs, n_pri) = (matrix.nrows(), matrix.ncols());
+    let (n_rs, n_ch) = (matrix.nrows(), matrix.ncols());
     let r = cell_radius as isize;
     let mut edged_matrix = Array2::from_elem(
-        [n_rs + 2 * cell_radius, n_pri + 2 * cell_radius],
+        [n_rs + 2 * cell_radius, n_ch + 2 * cell_radius],
         edge_level.value(),
     );
     edged_matrix
-        .slice_mut(s![r..r + n_rs as isize, r..r + n_pri as isize])
+        .slice_mut(s![r..r + n_rs as isize, r..r + n_ch as isize])
         .assign(matrix);
 
-    let mut is_local_max = BoolMatrix::from_elem([n_rs, n_pri], true);
+    let mut is_local_max = BoolMatrix::from_elem([n_rs, n_ch], true);
     for dx in -r..=r {
         for dy in -r..=r {
             if dx != 0 || dy != 0 {
                 let s = s![
                     r + dx..r + dx + n_rs as isize,
-                    r + dy..r + dy + n_pri as isize
+                    r + dy..r + dy + n_ch as isize
                 ];
                 is_local_max =
                     is_local_max & (matrix - &edged_matrix.slice(s)).map(|&diff| diff > 0.0)
@@ -246,11 +246,11 @@ fn local_max(matrix: &RealMatrix, edge_level: Decibel, cell_radius: usize) -> Bo
 }
 
 fn local_threshold(matrix: &RealMatrix, n_rs_thr: usize, n_guard_bins: usize) -> RealMatrix {
-    let (n_rs, n_pri) = (matrix.nrows(), matrix.ncols());
+    let (n_rs, n_ch) = (matrix.nrows(), matrix.ncols());
     let pad = n_rs_thr + n_guard_bins;
     let n_rb_pad = n_rs + 2 * pad + 1;
 
-    let mut padded = RealMatrix::from_elem([n_rb_pad, n_pri], 0.0);
+    let mut padded = RealMatrix::from_elem([n_rb_pad, n_ch], 0.0);
 
     let first_range_bins = s![1 + n_guard_bins..1 + n_guard_bins + pad, ..];
     let last_range_bins = s![n_rs - n_guard_bins - pad - 1..n_rs - n_guard_bins - 1, ..];
