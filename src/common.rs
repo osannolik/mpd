@@ -176,6 +176,13 @@ pub struct Target {
     pub level: Decibel,
 }
 
+#[derive(Debug)]
+pub struct CfarDetection {
+    pub range_bin: usize,
+    pub velocity: Real,
+    pub level: Decibel,
+}
+
 pub trait DataMatrix<T = Self>: Serialize {
     fn zero(size: (usize, usize)) -> Self;
 
@@ -238,6 +245,7 @@ pub trait Storable: Serialize {
 }
 
 impl<M: DataMatrix, D> Storable for Inti<M, D> {}
+impl<M: DataMatrix> Storable for M {}
 
 pub type RangePulse<M> = Inti<M, Time>;
 pub type RangeDoppler<M> = Inti<M, Freq>;

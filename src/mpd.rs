@@ -1,5 +1,6 @@
 use crate::common::{
-    DataMatrix, Decibel, RangeDoppler, RangePulse, Real, ScanProperties, Target, Units,
+    CfarDetection, DataMatrix, Decibel, RangeDoppler, RangePulse, Real, ScanProperties, Target,
+    Units,
 };
 use crate::iir;
 
@@ -286,7 +287,7 @@ fn local_threshold(matrix: &RealMatrix, n_rs_thr: usize, n_guard_bins: usize) ->
 }
 
 impl RangeDoppler<CpxMatrix> {
-    pub fn cfar(&self, config: &CfarConfig, properties: &ScanProperties) -> Vec<Target> {
+    pub fn cfar(&self, config: &CfarConfig, properties: &ScanProperties) -> Vec<CfarDetection> {
         let abs_matrix_db: RealMatrix = self.matrix.map(|&x| x.norm().ratio().db().value());
 
         let no_ml_clutter_pris = s![
@@ -319,11 +320,11 @@ impl RangeDoppler<CpxMatrix> {
         detections
             .indexed_iter()
             .filter(|&(_, &is_det)| is_det)
-            .map(|((rb, pri), _)| Target {
-                range: properties.to_range(n_rb_min + rb),
-                velocity: properties.unambiguous_velocity() * pri as Real
+            .map(|((rb, ch), _)| CfarDetection {
+                range_bin: n_rb_min + rb,
+                velocity: properties.unambiguous_velocity() * ch as Real
                     / properties.nof_pulses as Real,
-                level: 0.0.db(),
+                level: abs_matrix_db[[rb, ch]].db(),
             })
             .collect()
     }
