@@ -1,16 +1,11 @@
-use crate::common::{CfarDetection, Real, ScanProperties, Storable};
+use crate::common::{CfarDetection, Real, ResolverDetection, ScanProperties, Storable};
 use ndarray::{s, stack, Array1, Array2, Axis};
 use std::collections::VecDeque;
 use std::path::Path;
 
-pub struct ResolverConfig {
-    pub nof_detections: usize,
-    pub nof_prf: usize,
-    pub velocity_window: Real,
-    pub range_max: Real,
-}
-
 pub struct Resolver {
+    range_bin_length: Real,
+    nof_detections: usize,
     v_prf: VecDeque<Real>,
     nof_range_bins: VecDeque<usize>,
     velocity_map: Array2<Real>,
@@ -23,12 +18,19 @@ fn unfold(start: usize, max: usize, step: usize) -> Vec<usize> {
 }
 
 impl Resolver {
-    pub fn new(config: &ResolverConfig, properties: &ScanProperties) -> Resolver {
-        let max_range_in_bins = (config.range_max / properties.range_bin_length()).floor();
+    pub fn new(
+        range_max: Real,
+        nof_prf: usize,
+        nof_detections: usize,
+        range_bin_length: Real,
+    ) -> Resolver {
+        let max_range_in_bins = (range_max / range_bin_length).floor() as usize;
         Resolver {
-            v_prf: VecDeque::from(vec![0.0; config.nof_prf]),
-            nof_range_bins: VecDeque::from(vec![0; config.nof_prf]),
-            velocity_map: Array2::zeros([max_range_in_bins as usize, config.nof_prf]),
+            range_bin_length,
+            nof_detections,
+            v_prf: VecDeque::from(vec![0.0; nof_prf]),
+            nof_range_bins: VecDeque::from(vec![0; nof_prf]),
+            velocity_map: Array2::zeros([max_range_in_bins, nof_prf]),
             last_det_bins: vec![],
         }
     }
@@ -39,7 +41,7 @@ impl Resolver {
             .expect("could not write vel_map");
     }
 
-    pub fn binary_integration(&self, nof_detections: usize) -> Vec<usize> {
+    fn binary_integration(&self) -> Vec<usize> {
         self.last_det_bins
             .iter()
             .filter_map(|&rb| {
@@ -50,7 +52,7 @@ impl Resolver {
                     .filter(|&vel| *vel > 0.0)
                     .count();
 
-                if nof_det_in_bin >= nof_detections {
+                if nof_det_in_bin >= self.nof_detections {
                     Some(rb)
                 } else {
                     None
@@ -59,10 +61,9 @@ impl Resolver {
             .collect()
     }
 
-    pub fn resolve_velocity(
+    fn resolve_velocity(
         &self,
-        bins: Vec<usize>,
-        nof_detections: usize,
+        bins: &Vec<usize>,
         velocity_window: Real,
         max_velocity: Real,
     ) -> Vec<(usize, Real)> {
@@ -88,8 +89,8 @@ impl Resolver {
 
                 let all_vel = Array1::from(unfolded);
 
-                let diff: Array1<_> = &all_vel.slice(s![nof_detections - 1..])
-                    - &all_vel.slice(s![..1 - nof_detections as isize]);
+                let diff: Array1<_> = &all_vel.slice(s![self.nof_detections - 1..])
+                    - &all_vel.slice(s![..1 - self.nof_detections as isize]);
 
                 let min_diff_index: Option<usize> = diff
                     .indexed_iter()
@@ -100,7 +101,10 @@ impl Resolver {
                 if let Some(i) = min_diff_index {
                     Some((
                         bin_index,
-                        all_vel.slice(s![i..i + nof_detections]).mean().unwrap(),
+                        all_vel
+                            .slice(s![i..i + self.nof_detections])
+                            .mean()
+                            .unwrap(),
                     ))
                 } else {
                     None
@@ -109,10 +113,25 @@ impl Resolver {
             .collect()
     }
 
-    pub fn terminate(&mut self, bins: Vec<usize>) {
+    pub fn process(&mut self, velocity_window: Real, max_velocity: Real) -> Vec<ResolverDetection> {
+        let range_bin_detections = self.binary_integration();
+        let detections =
+            self.resolve_velocity(&range_bin_detections, velocity_window, max_velocity);
+        let term_bins: Vec<usize> = detections.iter().map(|&(bin, _)| bin).collect();
+        self.terminate(&term_bins);
+        detections
+            .iter()
+            .map(|&(bin, vel)| ResolverDetection {
+                range: (bin - 1) as Real * self.range_bin_length,
+                velocity: -vel,
+            })
+            .collect()
+    }
+
+    fn terminate(&mut self, bins: &Vec<usize>) {
         let max_range_in_bins = self.velocity_map.nrows();
 
-        for bin_index in bins {
+        for &bin_index in bins {
             let vel_dets: Vec<usize> = self
                 .velocity_map
                 .row(bin_index)
@@ -133,11 +152,15 @@ impl Resolver {
         }
     }
 
-    pub fn add(&mut self, detections: &Vec<CfarDetection>, nof_range_bins: usize, v_prf: Real) {
+    pub fn add(
+        &mut self,
+        detections: &Vec<CfarDetection>,
+        properties: &ScanProperties,
+    ) -> &mut Self {
         self.nof_range_bins.pop_front().unwrap();
-        self.nof_range_bins.push_back(nof_range_bins);
+        self.nof_range_bins.push_back(properties.nof_range_bins);
         self.v_prf.pop_front().unwrap();
-        self.v_prf.push_back(v_prf);
+        self.v_prf.push_back(properties.unambiguous_velocity());
         self.last_det_bins.clear();
 
         self.velocity_map = stack(
@@ -152,7 +175,11 @@ impl Resolver {
         let max_range_in_bins = self.velocity_map.nrows();
 
         for detection in detections {
-            let mut det_bins = unfold(detection.range_bin, max_range_in_bins, nof_range_bins);
+            let mut det_bins = unfold(
+                detection.range_bin,
+                max_range_in_bins,
+                properties.nof_range_bins,
+            );
 
             det_bins.iter().for_each(|&bin| {
                 self.velocity_map
@@ -162,5 +189,7 @@ impl Resolver {
 
             self.last_det_bins.append(&mut det_bins);
         }
+
+        self
     }
 }

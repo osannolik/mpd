@@ -188,6 +188,12 @@ pub struct CfarDetection {
     pub level: Decibel,
 }
 
+#[derive(Debug)]
+pub struct ResolverDetection {
+    pub range: Real,
+    pub velocity: Real,
+}
+
 pub trait DataMatrix<T = Self>: Serialize {
     fn zero(size: (usize, usize)) -> Self;
 
