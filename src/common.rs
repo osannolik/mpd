@@ -140,6 +140,11 @@ impl ScanProperties {
         self.sample_freq / (self.nof_range_bins as Real)
     }
 
+    pub fn set_prf(&mut self, prf: Real) -> &mut Self {
+        self.nof_range_bins = (self.sample_freq / prf).abs().round() as usize;
+        self
+    }
+
     pub fn to_range(&self, range_bin: usize) -> Real {
         self.range_bin_length() * range_bin as Real
     }
