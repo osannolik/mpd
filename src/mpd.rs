@@ -6,8 +6,8 @@ use crate::iir;
 
 use std::iter::FromIterator;
 
-use num_complex::Complex64;
-use num_traits::{FloatConst, Num, Zero};
+use num::complex::Complex64;
+use num::traits::{FloatConst, Num, Zero};
 
 use rustfft::FFTplanner;
 
@@ -120,7 +120,7 @@ impl RangePulse<CpxMatrix> {
             * freqs_range.map(|&f| Real::powf(10.0, -1.25 / 81.0 * Real::powf(f * 2048.0, 2.0)));
 
         let to_weight = |n: &Real| -> Complex64 {
-            Complex64::from_polar(&(-2.0 * n.ln()).sqrt(), &(2.0 * Real::PI() * n))
+            Complex64::from_polar((-2.0 * n.ln()).sqrt(), 2.0 * Real::PI() * n)
         };
         let weights = Array2::random((nof_samples, nof_comps), Uniform::new(Real::EPSILON, 1.0))
             .map(to_weight)
@@ -128,7 +128,7 @@ impl RangePulse<CpxMatrix> {
         let phase = phase_range
             .t()
             .dot(&pri_range)
-            .map(|im| Complex64::from_polar(&1.0, im));
+            .map(|&im| Complex64::from_polar(1.0, im));
 
         Self::new(weights.dot(&phase))
     }
@@ -139,7 +139,7 @@ impl RangePulse<CpxMatrix> {
         let nof_pulses = properties.nof_pulses;
         let amp = target.level.ratio().value();
         let reflection = Array1::linspace(0.0, (nof_pulses - 1) as Real, nof_pulses)
-            .map(|&x| Complex64::from_polar(&amp, &(phase_shift_per_pulse * x)))
+            .map(|&x| Complex64::from_polar(amp, phase_shift_per_pulse * x))
             .to_2d();
         let send_pulse = properties.send_pulse(properties.sample_freq).to_2d();
         let echo = send_pulse.t().dot(&reflection);
@@ -161,8 +161,9 @@ impl RangePulse<CpxMatrix> {
     pub fn pulse_compress(&mut self, properties: &ScanProperties) {
         let send_pulse = properties.send_pulse(properties.sample_freq);
         let pulse_len = send_pulse.len();
-        let window = hanning(pulse_len).map(|&re| Complex64::new(re, 0.0));
-        let window = &window / window.dot(&window).sqrt();
+        let window = hanning(pulse_len);
+        let norm = window.dot(&window).sqrt();
+        let window = window.map(|&re| Complex64::new(re / norm, 0.0));
         let pulse = window * send_pulse;
 
         let (n_rs, n_pri) = self.matrix.size();
@@ -190,8 +191,9 @@ impl RangePulse<CpxMatrix> {
 
     pub fn doppler_filtering(self) -> RangeDoppler<CpxMatrix> {
         let (n_rs, n_pri) = self.matrix.size();
-        let window = hanning(n_pri).map(|&re| Complex64::new(re, 0.0));
-        let window = &window / window.dot(&window).sqrt();
+        let window = hanning(n_pri);
+        let norm = window.dot(&window).sqrt();
+        let window = window.map(|&re| Complex64::new(re / norm, 0.0));
         let window2d = CpxMatrix::ones([n_rs, 1]).dot(&window.to_2d());
 
         let mut range_pulse: CpxMatrix = window2d * &self.matrix;

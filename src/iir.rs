@@ -1,6 +1,6 @@
 // extern crate test;
 
-use num_traits::Zero;
+use num::traits::Zero;
 use std::iter::Sum;
 use std::ops::{Div, Mul, Sub};
 
@@ -31,7 +31,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use num_complex::Complex64;
+    use num::complex::Complex64;
     // use test::Bencher;
 
     const BR: [f64; 4] = [0.16666667, 0.5, 0.5, 0.16666667];

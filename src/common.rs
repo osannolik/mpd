@@ -5,7 +5,7 @@ use std::io::Write;
 use std::iter::Sum;
 use std::ops::{Add, Neg, Sub};
 
-use num_traits::{FromPrimitive, Num, ToPrimitive};
+use num::traits::{FromPrimitive, Num, ToPrimitive};
 use serde::Serialize;
 
 pub type Real = f64;
