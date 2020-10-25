@@ -1,7 +1,6 @@
-use crate::common::{CfarDetection, Real, ResolverDetection, ScanProperties, Storable};
+use crate::common::{CfarDetection, Real, ResolverDetection, ScanProperties};
 use ndarray::{s, stack, Array1, Array2, Axis};
 use std::collections::VecDeque;
-use std::path::Path;
 
 pub struct Resolver {
     range_bin_length: Real,
@@ -33,12 +32,6 @@ impl Resolver {
             velocity_map: Array2::zeros([max_range_in_bins, nof_prf]),
             last_det_bins: vec![],
         }
-    }
-
-    fn write_velocity_map(&self, name: &str) {
-        self.velocity_map
-            .to_file(Path::new(name))
-            .expect("could not write vel_map");
     }
 
     fn binary_integration(&self) -> Vec<usize> {
