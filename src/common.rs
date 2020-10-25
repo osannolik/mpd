@@ -137,7 +137,11 @@ impl ScanProperties {
     }
 
     pub fn pulse_repetition_freq(&self) -> Real {
-        self.sample_freq / (self.nof_range_bins as Real)
+        self.to_prf(self.nof_range_bins)
+    }
+
+    pub fn to_prf(&self, nof_range_bins: usize) -> Real {
+        self.sample_freq / (nof_range_bins as Real)
     }
 
     pub fn set_prf(&mut self, prf: Real) -> &mut Self {
