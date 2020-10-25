@@ -1,16 +1,14 @@
 #![allow(dead_code)]
 //#![feature(test)]
 
-mod common;
-mod iir;
-mod mpd;
-mod resolve;
+extern crate mpd;
 
-use crate::common::{
-    CfarDetection, RangeDoppler, RangePulse, ScanProperties, Storable, Target, Units,
+use mpd::{
+    CfarDetection, RangeDoppler, RangePulse, Resolver, ScanProperties, Storable, Target, Units,
 };
 
-use crate::mpd::CfarConfig;
+use mpd::CfarConfig;
+
 use std::path::Path;
 
 fn main() {
@@ -136,7 +134,7 @@ fn main() {
         },
     ];
 
-    let mut resolver = resolve::Resolver::new(200000.0, 8, 3, p.range_bin_length());
+    let mut resolver = Resolver::new(200000.0, 8, 3, p.range_bin_length());
 
     resolver
         .add(&cfar_dets1, &p)

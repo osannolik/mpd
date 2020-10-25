@@ -1,5 +1,5 @@
 [package]
-name = "mpd-rs"
+name = "mpd"
 version = "0.1.0"
 authors = ["Jonas <osannolik@godtycklig.se>"]
 edition = "2018"
