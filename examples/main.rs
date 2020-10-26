@@ -1,13 +1,12 @@
-#![allow(dead_code)]
-//#![feature(test)]
-
 extern crate mpd;
 
+use mpd::video::generate;
 use mpd::{CfarConfig, Resolver, ScanProperties, Target, Units};
 
-use mpd::video::generate;
-
-//use std::path::Path;
+/*
+use mpd::Storable;
+use std::path::Path;
+ */
 
 fn main() {
     let mut p = ScanProperties {
@@ -53,6 +52,11 @@ fn main() {
         p.set_prf(prf);
 
         let video = generate(&targets, noise, clutter, &p);
+        /*
+        video
+            .to_file(Path::new(format!("video_{}.json", i).as_str()))
+            .unwrap();
+         */
 
         let video_pulse_compressed = video.pulse_compress(&p);
 
@@ -69,17 +73,4 @@ fn main() {
             prf, resolved_detections
         );
     }
-
-    /*
-       let noise_level = -75.0.db();
-       let video = RangePulse::noise(noise_level, &p)
-           + RangePulse::clutter(noise_level + 40.0.db(), &p)
-           + targets.iter().map(|tgt| RangePulse::target(tgt, &p)).sum();
-
-    println!("Video {:?}", video);
-
-    video
-        .to_file(Path::new("video.json"))
-        .expect("Could not write to file");
-    */
 }
