@@ -3,12 +3,27 @@ extern crate mpd;
 use mpd::video::generate;
 use mpd::{CfarConfig, Resolver, ScanProperties, Target, Units};
 
-/*
+use clap::App;
 use mpd::Storable;
 use std::path::Path;
- */
 
 fn main() {
+    let matches = App::new("MPD example")
+        .version("0.1.0")
+        .author("")
+        .about(
+            "A very simple example of a pulse doppler radar signal processing chain:\n
+                        1. Generation of sampled video\n
+                        2. Pulse compression\n
+                        3. Doppler filtering (FFT) into the range-frequency domain\n
+                        4. Constant false alarm rate processing\n
+                        5. Range and velocity resolving",
+        )
+        .arg("--files... 'Dump data from each processing step into json files'")
+        .get_matches();
+
+    let do_it = matches.is_present("files");
+
     let mut p = ScanProperties {
         carrier_freq: 3.0e9,
         sample_freq: 1.0e6,
@@ -52,15 +67,13 @@ fn main() {
         p.set_prf(prf);
 
         let video = generate(&targets, noise, clutter, &p);
-        /*
-        video
-            .to_file(Path::new(format!("video_{}.json", i).as_str()))
-            .unwrap();
-         */
+        to_file(&video, "input.json", do_it);
 
         let video_pulse_compressed = video.pulse_compress(&p);
+        to_file(&video_pulse_compressed, "pulse_compressed.json", do_it);
 
         let video_range_doppler = video_pulse_compressed.doppler_filtering();
+        to_file(&video_range_doppler, "range_doppler.json", do_it);
 
         let cfar_detections = video_range_doppler.cfar(&cfg, &p);
 
@@ -72,5 +85,14 @@ fn main() {
             "Resolved detections using prf={:?}: {:?}",
             prf, resolved_detections
         );
+    }
+}
+
+fn to_file<T>(inti: &T, s: &str, enable: bool)
+where
+    T: Storable,
+{
+    if enable {
+        inti.to_file(Path::new(s)).expect("Failed to write file");
     }
 }
